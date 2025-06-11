@@ -1,24 +1,27 @@
-public class Train {
-    private int trainNumber;
-    private int trackIndex;
-    private int positionIndex;
-    private int frequency;
-    private char state;
-    private int sectionIndex;
-    private int turnCounter;
+import java.util.concurrent.Semaphore;
 
-    public Train(int trainNumber, int trackIndex, int positionIndex, int frequency, char state, int sectionIndex) {
-        this.trainNumber = trainNumber;
+public class Train extends Thread {
+
+    private final int id;
+    private final int trackIndex;
+    private int positionIndex;
+    private final int frequency;
+    private char state; // M = moving, S = stopped, W = waiting
+    private int tickCount;
+    private int currentSection;
+
+    public Train(int id, int trackIndex, int positionIndex, int frequency) {
+        this.id = id;
         this.trackIndex = trackIndex;
         this.positionIndex = positionIndex;
         this.frequency = frequency;
-        this.state = state;
-        this.sectionIndex = sectionIndex;
-        this.turnCounter = 0;
+        this.state = 'M';
+        this.tickCount = 0;
+        this.currentSection = 0;
     }
 
-    public int getTrainNumber() {
-        return trainNumber;
+    public int getTrainId() {
+        return id;
     }
 
     public int getTrackIndex() {
@@ -29,49 +32,65 @@ public class Train {
         return positionIndex;
     }
 
-    public int getFrequency() {
-        return frequency;
-    }
-
-    public char getState() {
+    public char getTrainState() {
         return state;
     }
 
-    public int getSectionIndex() {
-        return sectionIndex;
+    public int getCurrentSection() {
+        return currentSection;
     }
 
-    public int getTurnCounter() {
-        return turnCounter;
+    @Override
+    public void run() {
+        Track track = Main.tracks.get(trackIndex);
+
+        while (true) {
+            try {
+                Thread.sleep(100); // Small delay for simulation effect
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+
+            tickCount++;
+            if (tickCount % frequency != 0) continue;
+
+            int nextPos = (positionIndex + 1) % track.getPositions().size();
+
+            // Check if current position is before a stop
+            int nextStopIndex = track.getNextStopIndex(positionIndex);
+            if (nextStopIndex != -1 && nextStopIndex == nextPos) {
+                Stop stop = track.getStopByPosition(nextStopIndex);
+                state = 'W';
+                try {
+                    stop.getCapacitySemaphore().acquire(); // wait for stop capacity
+                    Main.sectionSemaphores[stop.getSectionSemaphoreIndex()].acquire(); // wait for section
+                    positionIndex = nextStopIndex;
+                    state = 'S';
+                    if (currentSection < track.getStops().size())
+                        Main.sectionSemaphores[track.getStops().get(currentSection).getSectionSemaphoreIndex()].release();
+                    currentSection = track.getStops().indexOf(stop);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+            // If currently on a stop, move to next segment if possible
+            else if (track.isStopPosition(positionIndex)) {
+                Stop currentStop = track.getStopByPosition(positionIndex);
+                state = 'W';
+                try {
+                    Main.sectionSemaphores[currentStop.getSectionSemaphoreIndex()].acquire(); // wait for section
+                    positionIndex = nextPos;
+                    state = 'M';
+                    currentStop.getCapacitySemaphore().release(); // leave stop
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+            // Just move normally
+            else {
+                positionIndex = nextPos;
+                state = 'M';
+            }
+        }
     }
-
-    public void setTrainNumber(int trainNumber) {
-        this.trainNumber = trainNumber;
-    }
-
-    public void setTrackIndex(int trackIndex) {
-        this.trackIndex = trackIndex;
-    }
-
-    public void setPositionIndex(int positionIndex) {
-        this.positionIndex = positionIndex;
-    }
-
-    public void setFrequency(int frequency) {
-        this.frequency = frequency;
-    }
-
-    public void setState(char state) {
-        this.state = state;
-    }
-
-    public void setSectionIndex(int sectionIndex) {
-        this.sectionIndex = sectionIndex;
-    }
-
-    public void setTurnCounter(int turnCounter) {
-        this.turnCounter = turnCounter;
-    }
-
-
 }

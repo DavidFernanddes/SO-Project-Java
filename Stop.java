@@ -1,43 +1,43 @@
 import java.util.concurrent.Semaphore;
 
 public class Stop {
-    private int stopIndex;
-    private int semaphoreIndex;
-    private int stopCapacity;
-    private Semaphore stopSemaphore;
+    private final int index;
+    private final int sectionSemaphore;
+    private final int capacity;
+    private final Semaphore stopSemaphore;
+    private final Semaphore capacitySemaphore;
+    private final int sectionSemaphoreIndex;
 
-    public Stop(int stopIndex, int semaphoreIndex, int stopCapacity) {
-        this.stopIndex = stopIndex;
-        this.semaphoreIndex = semaphoreIndex;
-        this.stopCapacity = stopCapacity;
-        this.stopSemaphore = new Semaphore(stopCapacity, true); // justo (FIFO)
+    public Stop(int index, int sectionSemaphore, int capacity, Semaphore capacitySemaphore, int sectionSemaphoreIndex) {
+        this.index = index;
+        this.sectionSemaphore = sectionSemaphore;
+        this.capacity = capacity;
+        this.stopSemaphore = new Semaphore(capacity);
+        this.capacitySemaphore = capacitySemaphore;
+        this.sectionSemaphoreIndex = sectionSemaphoreIndex;
     }
 
-    public int getStopIndex() {
-        return stopIndex;
+    public int getIndex() {
+        return index;
     }
 
     public int getSemaphoreIndex() {
-        return semaphoreIndex;
+        return sectionSemaphore;
     }
 
     public int getStopCapacity() {
-        return stopCapacity;
+        return capacity;
     }
 
     public Semaphore getStopSemaphore() {
         return stopSemaphore;
     }
 
-    public void enter() {
-        try {
-            stopSemaphore.acquire();
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
+    public Semaphore getCapacitySemaphore() {
+        return capacitySemaphore;
     }
 
-    public void leave() {
-        stopSemaphore.release();
+    public int getSectionSemaphoreIndex() {
+        return sectionSemaphoreIndex;
     }
 }
