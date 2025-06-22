@@ -1,96 +1,285 @@
 import java.util.concurrent.Semaphore;
 
 public class Train extends Thread {
+    private int num;
+    private int track;
+    private int position;
+    private int speed;
+    private int counter;
+    private char state;
+    private int section;
+    private int lastStop;
+    private int nextStop;
 
-    private final int id;
-    private final int trackIndex;
-    private int positionIndex;
-    private final int frequency;
-    private char state; // M = moving, S = stopped, W = waiting
-    private int tickCount;
-    private int currentSection;
+    // References to shared data
+    private Track[] tracks;
+    private Semaphore[] semaphores;
+    private Semaphore mutex;
+    private int waitTime;
+    private int fileType;
 
-    public Train(int id, int trackIndex, int positionIndex, int frequency) {
-        this.id = id;
-        this.trackIndex = trackIndex;
-        this.positionIndex = positionIndex;
-        this.frequency = frequency;
+    public Train() {
+        this.num = 0;
+        this.track = 0;
+        this.position = 0;
+        this.speed = 1;
+        this.counter = 0;
         this.state = 'M';
-        this.tickCount = 0;
-        this.currentSection = 0;
+        this.section = 0;
+        this.lastStop = -1;
+        this.nextStop = -1;
     }
 
-    public int getTrainId() {
-        return id;
+    public Train(int num, int track, int position, int speed) {
+        this();
+        this.num = num;
+        this.track = track;
+        this.position = position;
+        this.speed = speed;
     }
 
-    public int getTrackIndex() {
-        return trackIndex;
-    }
+    public void initialize(Track[] tracks, Semaphore[] semaphores, Semaphore mutex, int waitTime, int fileType) {
+        this.tracks = tracks;
+        this.semaphores = semaphores;
+        this.mutex = mutex;
+        this.waitTime = waitTime;
+        this.fileType = fileType;
 
-    public int getPositionIndex() {
-        return positionIndex;
-    }
-
-    public char getTrainState() {
-        return state;
-    }
-
-    public int getCurrentSection() {
-        return currentSection;
+        if (fileType == 2) {
+            findTrainStops();
+        }
     }
 
     @Override
     public void run() {
-        Track track = Main.tracks.get(trackIndex);
+        if (fileType == 2) {
+            trainProcessWithStops();
+        } else {
+            trainProcessSimple();
+        }
+    }
 
-        while (true) {
+    private void trainProcessSimple() {
+        while (!Thread.currentThread().isInterrupted()) {
             try {
-                Thread.sleep(100); // Small delay for simulation effect
+                mutex.acquire();
+                counter++;
+                if (counter % speed == 0) {
+                    position++;
+                    if (position >= tracks[track].getSize()) {
+                        position = 0;
+                    }
+                }
+                mutex.release();
+                Thread.sleep(waitTime / 1000); // Convert microseconds to milliseconds
             } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-
-            tickCount++;
-            if (tickCount % frequency != 0) continue;
-
-            int nextPos = (positionIndex + 1) % track.getPositions().size();
-
-            // Check if current position is before a stop
-            int nextStopIndex = track.getNextStopIndex(positionIndex);
-            if (nextStopIndex != -1 && nextStopIndex == nextPos) {
-                Stop stop = track.getStopByPosition(nextStopIndex);
-                state = 'W';
-                try {
-                    stop.getCapacitySemaphore().acquire(); // wait for stop capacity
-                    Main.sectionSemaphores[stop.getSectionSemaphoreIndex()].acquire(); // wait for section
-                    positionIndex = nextStopIndex;
-                    state = 'S';
-                    if (currentSection < track.getStops().size())
-                        Main.sectionSemaphores[track.getStops().get(currentSection).getSectionSemaphoreIndex()].release();
-                    currentSection = track.getStops().indexOf(stop);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-            // If currently on a stop, move to next segment if possible
-            else if (track.isStopPosition(positionIndex)) {
-                Stop currentStop = track.getStopByPosition(positionIndex);
-                state = 'W';
-                try {
-                    Main.sectionSemaphores[currentStop.getSectionSemaphoreIndex()].acquire(); // wait for section
-                    positionIndex = nextPos;
-                    state = 'M';
-                    currentStop.getCapacitySemaphore().release(); // leave stop
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-            // Just move normally
-            else {
-                positionIndex = nextPos;
-                state = 'M';
+                Thread.currentThread().interrupt();
+                break;
             }
         }
     }
+
+    private void trainProcessWithStops() {
+        Track currentTrack = tracks[track];
+
+        while (!Thread.currentThread().isInterrupted()) {
+            try {
+                Thread.sleep((waitTime * speed) / 1000);
+
+                mutex.acquire();
+                counter++;
+
+                if (counter % speed == 0) {
+                    moveTrainStep(currentTrack);
+                }
+
+                mutex.release();
+
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+    }
+
+    private void moveTrainStep(Track currentTrack) throws InterruptedException {
+        // Check if we're currently at a stop
+        if (isAtStop(currentTrack)) {
+            // We're at a stop, try to leave
+            state = 'W'; // Waiting to leave stop
+
+            int nextSemIdx = currentTrack.getStop(nextStop).getSemaphoreIndex();
+
+            // Release mutex before trying to acquire section semaphore
+            mutex.release();
+
+            // Try to acquire next section (this will block if section is occupied)
+            semaphores[nextSemIdx].acquire();
+
+            // Re-acquire mutex to update state
+            mutex.acquire();
+
+            // Successfully acquired next section, move out of stop
+            state = 'M';
+            position++;
+            if (position >= currentTrack.getSize()) {
+                position = 0;
+            }
+
+            // Release stop capacity semaphore
+            currentTrack.getStop(section).getCapacitySemaphore().release();
+
+            // Update section tracking
+            section = nextStop;
+            nextStop = (nextStop + 1) % currentTrack.getNumStops();
+
+        } else {
+            // Check if next position is a stop
+            int nextPos = (position + 1) % currentTrack.getSize();
+            boolean nextIsStop = false;
+            int stopIndex = -1;
+
+            for (int s = 0; s < currentTrack.getNumStops(); s++) {
+                if (currentTrack.getStop(s).getStopIndex() == nextPos) {
+                    nextIsStop = true;
+                    stopIndex = s;
+                    break;
+                }
+            }
+
+            if (nextIsStop) {
+                // Next position is a stop, try to enter
+                state = 'W'; // Waiting to enter stop
+
+                Stop stop = currentTrack.getStop(stopIndex);
+
+                // Release mutex before trying to acquire stop capacity
+                mutex.release();
+
+                // Try to acquire stop capacity (this will block if stop is full)
+                stop.getCapacitySemaphore().acquire();
+
+                // Re-acquire mutex to update state
+                mutex.acquire();
+
+                // Successfully acquired stop capacity, move to stop
+                state = 'S';
+                position = nextPos;
+
+                // Release previous section semaphore
+                if (section >= 0 && section < currentTrack.getNumStops()) {
+                    int prevSemIdx = currentTrack.getStop(section).getSemaphoreIndex();
+                    semaphores[prevSemIdx].release();
+                }
+
+                // Update section tracking
+                section = stopIndex;
+
+            } else {
+                // Normal movement within section
+                state = 'M';
+                position++;
+                if (position >= currentTrack.getSize()) {
+                    position = 0;
+                }
+            }
+        }
+    }
+
+    private boolean isAtStop(Track currentTrack) {
+        for (int s = 0; s < currentTrack.getNumStops(); s++) {
+            if (currentTrack.getStop(s).getStopIndex() == position) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void findTrainStops() {
+        Track currentTrack = tracks[track];
+        int pos = position;
+        int lastStopIdx = -1;
+        int nextStopIdx = -1;
+
+        // Find current or last passed stop
+        for (int s = 0; s < currentTrack.getNumStops(); s++) {
+            if (currentTrack.getStop(s).getStopIndex() <= pos) {
+                if (lastStopIdx == -1 ||
+                        currentTrack.getStop(s).getStopIndex() > currentTrack.getStop(lastStopIdx).getStopIndex()) {
+                    lastStopIdx = s;
+                }
+            }
+        }
+
+        if (lastStopIdx == -1) {
+            lastStopIdx = currentTrack.getNumStops() - 1;
+        }
+
+        // Find next stop
+        for (int s = 0; s < currentTrack.getNumStops(); s++) {
+            if (currentTrack.getStop(s).getStopIndex() > pos) {
+                if (nextStopIdx == -1 ||
+                        currentTrack.getStop(s).getStopIndex() < currentTrack.getStop(nextStopIdx).getStopIndex()) {
+                    nextStopIdx = s;
+                }
+            }
+        }
+
+        if (nextStopIdx == -1) {
+            nextStopIdx = 0;
+        }
+
+        lastStop = lastStopIdx;
+        nextStop = nextStopIdx;
+        section = lastStopIdx;
+
+        // Check if currently at a stop
+        boolean atStop = false;
+        for (int s = 0; s < currentTrack.getNumStops(); s++) {
+            if (currentTrack.getStop(s).getStopIndex() == pos) {
+                state = 'S';
+                section = s;
+                atStop = true;
+                break;
+            }
+        }
+
+        // If not at a stop, acquire semaphore for current section
+        if (!atStop && section >= 0 && section < currentTrack.getNumStops()) {
+            try {
+                int semIdx = currentTrack.getStop(section).getSemaphoreIndex();
+                semaphores[semIdx].acquire();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    // Getters and setters
+    public synchronized int getNum() { return num; }
+    public synchronized void setNum(int num) { this.num = num; }
+
+    public synchronized int getTrack() { return track; }
+    public synchronized void setTrack(int track) { this.track = track; }
+
+    public synchronized int getPosition() { return position; }
+    public synchronized void setPosition(int position) { this.position = position; }
+
+    public synchronized int getSpeed() { return speed; }
+    public synchronized void setSpeed(int speed) { this.speed = speed; }
+
+    public synchronized int getCounter() { return counter; }
+    public synchronized void setCounter(int counter) { this.counter = counter; }
+
+    public synchronized char getTrainState() { return state; }
+    public synchronized void setTrainState(char state) { this.state = state; }
+
+    public synchronized int getSection() { return section; }
+    public synchronized void setSection(int section) { this.section = section; }
+
+    public synchronized int getLastStop() { return lastStop; }
+    public synchronized void setLastStop(int lastStop) { this.lastStop = lastStop; }
+
+    public synchronized int getNextStop() { return nextStop; }
+    public synchronized void setNextStop(int nextStop) { this.nextStop = nextStop; }
 }

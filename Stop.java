@@ -1,43 +1,62 @@
 import java.util.concurrent.Semaphore;
 
 public class Stop {
-    private final int index;
-    private final int sectionSemaphore;
-    private final int capacity;
-    private final Semaphore stopSemaphore;
-    private final Semaphore capacitySemaphore;
-    private final int sectionSemaphoreIndex;
+    private int stopIndex;
+    private int semaphoreIndex;
+    private int capacity;
+    private Semaphore capacitySemaphore;
 
-    public Stop(int index, int sectionSemaphore, int capacity, Semaphore capacitySemaphore, int sectionSemaphoreIndex) {
-        this.index = index;
-        this.sectionSemaphore = sectionSemaphore;
-        this.capacity = capacity;
-        this.stopSemaphore = new Semaphore(capacity);
-        this.capacitySemaphore = capacitySemaphore;
-        this.sectionSemaphoreIndex = sectionSemaphoreIndex;
+    public Stop() {
+        this.stopIndex = 0;
+        this.semaphoreIndex = 0;
+        this.capacity = 1;
+        this.capacitySemaphore = new Semaphore(1);
     }
 
-    public int getIndex() {
-        return index;
+    public Stop(int stopIndex, int semaphoreIndex) {
+        this.stopIndex = stopIndex;
+        this.semaphoreIndex = semaphoreIndex;
+        this.capacity = 1;
+        this.capacitySemaphore = new Semaphore(1);
+    }
+
+    public Stop(int stopIndex, int semaphoreIndex, int capacity) {
+        this.stopIndex = stopIndex;
+        this.semaphoreIndex = semaphoreIndex;
+        this.capacity = capacity;
+        this.capacitySemaphore = new Semaphore(capacity);
+    }
+
+    public int getStopIndex() {
+        return stopIndex;
+    }
+
+    public void setStopIndex(int stopIndex) {
+        this.stopIndex = stopIndex;
     }
 
     public int getSemaphoreIndex() {
-        return sectionSemaphore;
+        return semaphoreIndex;
     }
 
-    public int getStopCapacity() {
+    public void setSemaphoreIndex(int semaphoreIndex) {
+        this.semaphoreIndex = semaphoreIndex;
+    }
+
+    public int getCapacity() {
         return capacity;
     }
 
-    public Semaphore getStopSemaphore() {
-        return stopSemaphore;
+    public void setCapacity(int capacity) {
+        this.capacity = capacity;
+        this.capacitySemaphore = new Semaphore(capacity);
     }
 
     public Semaphore getCapacitySemaphore() {
         return capacitySemaphore;
     }
 
-    public int getSectionSemaphoreIndex() {
-        return sectionSemaphoreIndex;
+    public void setCapacitySemaphore(Semaphore capacitySemaphore) {
+        this.capacitySemaphore = capacitySemaphore;
     }
 }

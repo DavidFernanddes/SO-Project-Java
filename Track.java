@@ -1,59 +1,89 @@
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Scanner;
-
 public class Track {
-    private final int number;
-    private final List<Position> positions;
-    private final List<Stop> stops;
+    public static final int MAX_POSITIONS = 50;
+    public static final int MAX_STOPS = 10;
 
-    public Track(Scanner scanner) {
-        this.number = scanner.nextInt();
-        int positionCount = scanner.nextInt();
-        int stopCount = scanner.nextInt();
+    private int num;
+    private int size;
+    private Position[] position;
+    private int numStops;
+    private Stop[] stops;
 
-        positions = new ArrayList<>(positionCount);
-        stops = new ArrayList<>(stopCount);
+    public Track() {
+        this.num = 0;
+        this.size = 0;
+        this.position = new Position[MAX_POSITIONS];
+        this.numStops = 0;
+        this.stops = new Stop[MAX_STOPS];
 
-        for (int i = 0; i < positionCount; i++) {
-            int x = scanner.nextInt();
-            int y = scanner.nextInt();
-            positions.add(new Position(x, y));
+        // Initialize arrays
+        for (int i = 0; i < MAX_POSITIONS; i++) {
+            position[i] = new Position();
         }
-
-        for (int i = 0; i < stopCount; i++) {
-            int posIndex = scanner.nextInt();
-            int semaphore = scanner.nextInt();
-            int capacity = scanner.nextInt();
-            stops.add(new Stop(posIndex, semaphore, capacity, Main.sectionSemaphores[semaphore], semaphore));
+        for (int i = 0; i < MAX_STOPS; i++) {
+            stops[i] = new Stop();
         }
     }
 
-    public int getNumber() {
-        return number;
+    public Track(int num) {
+        this();
+        this.num = num;
     }
 
-    public List<Position> getPositions() {
-        return new ArrayList<>(positions);
+    public int getNum() {
+        return num;
     }
 
-    public List<Stop> getStops() {
-        return new ArrayList<>(stops);
+    public void setNum(int num) {
+        this.num = num;
     }
 
-    public boolean isStopPosition(int index) {
-        return stops.stream().anyMatch(stop -> stop.getIndex() == index);
+    public int getSize() {
+        return size;
     }
 
-    public Stop getStopByPosition(int index) {
-        return stops.stream()
-                .filter(stop -> stop.getIndex() == index)
-                .findFirst()
-                .orElse(null);
+    public void setSize(int size) {
+        this.size = size;
     }
 
-    public int getNextStopIndex(int currentIndex) {
-        int nextIndex = (currentIndex + 1) % positions.size();
-        return stops.stream().anyMatch(stop -> stop.getIndex() == nextIndex) ? nextIndex : -1;
+    public Position[] getPosition() {
+        return position;
+    }
+
+    public Position getPosition(int index) {
+        if (index >= 0 && index < MAX_POSITIONS) {
+            return position[index];
+        }
+        return null;
+    }
+
+    public void setPosition(int index, Position pos) {
+        if (index >= 0 && index < MAX_POSITIONS) {
+            position[index] = pos;
+        }
+    }
+
+    public int getNumStops() {
+        return numStops;
+    }
+
+    public void setNumStops(int numStops) {
+        this.numStops = numStops;
+    }
+
+    public Stop[] getStops() {
+        return stops;
+    }
+
+    public Stop getStop(int index) {
+        if (index >= 0 && index < MAX_STOPS) {
+            return stops[index];
+        }
+        return null;
+    }
+
+    public void setStop(int index, Stop stop) {
+        if (index >= 0 && index < MAX_STOPS) {
+            stops[index] = stop;
+        }
     }
 }
