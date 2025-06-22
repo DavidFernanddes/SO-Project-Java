@@ -7,24 +7,18 @@ public class Stop {
     private Semaphore capacitySemaphore;
 
     public Stop() {
-        this.stopIndex = 0;
-        this.semaphoreIndex = 0;
-        this.capacity = 1;
-        this.capacitySemaphore = new Semaphore(1);
+        this(0, 0, 1);
     }
 
     public Stop(int stopIndex, int semaphoreIndex) {
-        this.stopIndex = stopIndex;
-        this.semaphoreIndex = semaphoreIndex;
-        this.capacity = 1;
-        this.capacitySemaphore = new Semaphore(1);
+        this(stopIndex, semaphoreIndex, 1);
     }
 
     public Stop(int stopIndex, int semaphoreIndex, int capacity) {
         this.stopIndex = stopIndex;
         this.semaphoreIndex = semaphoreIndex;
-        this.capacity = capacity;
-        this.capacitySemaphore = new Semaphore(capacity);
+        this.capacity = Math.max(1, capacity);
+        this.capacitySemaphore = new Semaphore(this.capacity);
     }
 
     public int getStopIndex() {
@@ -48,15 +42,18 @@ public class Stop {
     }
 
     public void setCapacity(int capacity) {
-        this.capacity = capacity;
-        this.capacitySemaphore = new Semaphore(capacity);
+        this.capacity = Math.max(1, capacity);
+        this.capacitySemaphore = new Semaphore(this.capacity);
     }
 
     public Semaphore getCapacitySemaphore() {
         return capacitySemaphore;
     }
 
-    public void setCapacitySemaphore(Semaphore capacitySemaphore) {
-        this.capacitySemaphore = capacitySemaphore;
+    @Override
+    public String toString() {
+        return String.format("Stop[index=%d, sem=%d, cap=%d, available=%d]",
+                stopIndex, semaphoreIndex, capacity,
+                capacitySemaphore.availablePermits());
     }
 }
