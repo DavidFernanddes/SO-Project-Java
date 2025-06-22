@@ -6,7 +6,7 @@ public class Simulation {
     public static final int MAX_TRACKS = 5;
     public static final int MAX_TRAINS = 10;
     public static final int BOARD_SIZE = 10;
-    public static final int MAX_SEMAPHORES = 10;
+    public static final int MAX_SEMAPHORES = 20; // Aumentado para 20 conforme especificação
 
     private Track[] tracks;
     private Train[] trains;
@@ -84,8 +84,6 @@ public class Simulation {
 
             System.out.println("Train " + trains[c].getNum() + ": track=" + trains[c].getTrack() +
                     " pos=" + trains[c].getPosition() + " speed=" + trains[c].getSpeed());
-
-            trains[c].initialize(tracks, semaphores, mutex, 0, fileType);
         }
 
         scanner.close();
@@ -100,7 +98,7 @@ public class Simulation {
             }
         }
 
-        // Add track positions - only process tracks that actually exist
+        // Add track positions - apenas processar tracks que existem
         for (int t = 0; t < MAX_TRACKS; t++) {
             Track track = tracks[t];
             if (track == null || track.getSize() <= 0) continue;
@@ -132,7 +130,7 @@ public class Simulation {
             }
         }
 
-        // Add trains
+        // Add trains (sobrepõe as posições das tracks)
         for (int c = 0; c < numTrains; c++) {
             Train train = trains[c];
             if (train == null) continue;
@@ -169,8 +167,9 @@ public class Simulation {
         System.out.println();
         System.out.println("Trains:");
         for (int c = 0; c < numTrains; c++) {
-            int trackIdx = trains[c].getTrack();
-            int posIdx = trains[c].getPosition();
+            Train train = trains[c];
+            int trackIdx = train.getTrack();
+            int posIdx = train.getPosition();
 
             if (trackIdx >= 0 && trackIdx < MAX_TRACKS &&
                     posIdx >= 0 && posIdx < tracks[trackIdx].getSize()) {
@@ -178,8 +177,8 @@ public class Simulation {
 
                 if (pos != null) {
                     System.out.printf("T%d (%d,%d) - %d - %c%n",
-                            trains[c].getNum(), pos.getX(), pos.getY(),
-                            trains[c].getSection(), trains[c].getTrainState());
+                            train.getNum(), pos.getX(), pos.getY(),
+                            train.getSection(), train.getTrainState());
                 }
             }
         }
@@ -202,7 +201,7 @@ public class Simulation {
                 fillBoard();
                 printState();
                 mutex.release();
-                Thread.sleep(waitTime / 1000); // Convert microseconds to milliseconds
+                Thread.sleep(waitTime); // Usar waitTime diretamente, não dividir por 1000
             } catch (InterruptedException e) {
                 break;
             }
@@ -216,8 +215,8 @@ public class Simulation {
         }
 
         String fileName = args[0];
-        int waitTime = Integer.parseInt(args[1]) * 1000; // Convert to microseconds
-        int fileType = (args.length == 3) ? Integer.parseInt(args[2]) : 0;
+        int waitTime = Integer.parseInt(args[1]); // Manter em milissegundos, não converter
+        int fileType = (args.length == 3) ? Integer.parseInt(args[2]) : 1; // Default 1, não 0
 
         Simulation simulation = new Simulation();
 

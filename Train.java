@@ -47,6 +47,8 @@ public class Train extends Thread {
 
         if (fileType == 2) {
             findTrainStops();
+        } else {
+            initializeSimpleMode();
         }
     }
 
@@ -59,19 +61,154 @@ public class Train extends Thread {
         }
     }
 
+    private void initializeSection() {
+        Track currentTrack = tracks[track];
+
+        // Encontrar a seção atual baseada na posição
+        int currentSection = 0;
+        for (int s = 0; s < currentTrack.getNumStops(); s++) {
+            Stop stop = currentTrack.getStop(s);
+            if (stop != null && stop.getStopIndex() <= position) {
+                currentSection = s;
+            }
+        }
+
+        this.section = currentSection;
+
+        // Se não estiver numa paragem, adquirir semáforo da seção
+        boolean atStop = false;
+        for (int s = 0; s < currentTrack.getNumStops(); s++) {
+            Stop stop = currentTrack.getStop(s);
+            if (stop != null && stop.getStopIndex() == position) {
+                state = 'S';
+                atStop = true;
+                break;
+            }
+        }
+
+        if (!atStop && currentSection < currentTrack.getNumStops()) {
+            try {
+                Stop currentStop = currentTrack.getStop(currentSection);
+                if (currentStop != null) {
+                    semaphores[currentStop.getSemaphoreIndex()].acquire();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
     private void trainProcessSimple() {
         while (!Thread.currentThread().isInterrupted()) {
             try {
-                mutex.acquire();
-                counter++;
-                if (counter % speed == 0) {
-                    position++;
-                    if (position >= tracks[track].getSize()) {
-                        position = 0;
+                Thread.sleep(waitTime);
+
+                try {
+                    mutex.acquire();
+                    counter++;
+                    if (counter % speed == 0) {
+
+                        Track currentTrack = tracks[track];
+                        int nextPos = (position + 1) % currentTrack.getSize();
+
+                        // Verificar se a próxima posição é uma paragem
+                        boolean nextIsStop = false;
+                        int nextStopIndex = -1;
+                        for (int s = 0; s < currentTrack.getNumStops(); s++) {
+                            Stop stop = currentTrack.getStop(s);
+                            if (stop != null && stop.getStopIndex() == nextPos) {
+                                nextIsStop = true;
+                                nextStopIndex = s;
+                                break;
+                            }
+                        }
+
+                        // Verificar se está atualmente numa paragem
+                        boolean currentlyAtStop = false;
+                        int currentStopIndex = -1;
+                        for (int s = 0; s < currentTrack.getNumStops(); s++) {
+                            Stop stop = currentTrack.getStop(s);
+                            if (stop != null && stop.getStopIndex() == position) {
+                                currentlyAtStop = true;
+                                currentStopIndex = s;
+                                break;
+                            }
+                        }
+
+                        if (currentlyAtStop) {
+                            // Está numa paragem - tentar sair
+                            state = 'W';
+
+                            // Encontrar próxima seção
+                            int nextSectionIndex = (currentStopIndex + 1) % currentTrack.getNumStops();
+                            Stop nextSection = currentTrack.getStop(nextSectionIndex);
+
+                            mutex.release();
+
+                            // Tentar adquirir semáforo da próxima seção
+                            if (semaphores[nextSection.getSemaphoreIndex()].tryAcquire()) {
+                                mutex.acquire();
+
+                                // Conseguiu - mover para fora da paragem
+                                position = nextPos;
+                                state = 'M';
+                                section = nextSectionIndex;
+
+                                // Libertar capacidade da paragem
+                                currentTrack.getStop(currentStopIndex).getCapacitySemaphore().release();
+                            } else {
+                                // Não conseguiu - ficar à espera
+                                mutex.acquire();
+                                state = 'W';
+                            }
+
+                        } else if (nextIsStop) {
+                            // Próxima posição é paragem - tentar entrar
+                            state = 'W';
+                            Stop nextStop = currentTrack.getStop(nextStopIndex);
+
+                            mutex.release();
+
+                            // Tentar adquirir capacidade da paragem
+                            if (nextStop.getCapacitySemaphore().tryAcquire()) {
+                                mutex.acquire();
+
+                                // Conseguiu - mover para a paragem
+                                position = nextPos;
+                                state = 'S';
+
+                                // Libertar semáforo da seção atual
+                                if (section >= 0 && section < currentTrack.getNumStops()) {
+                                    Stop currentSection = currentTrack.getStop(section);
+                                    semaphores[currentSection.getSemaphoreIndex()].release();
+                                }
+
+                                section = nextStopIndex;
+                            } else {
+                                // Não conseguiu - ficar à espera
+                                mutex.acquire();
+                                state = 'W';
+                            }
+
+                        } else {
+                            // Movimento normal na seção
+                            position = nextPos;
+                            state = 'M';
+                        }
                     }
+
+                    if (mutex.availablePermits() == 0) {
+                        mutex.release();
+                    }
+
+                } catch (InterruptedException e) {
+                    if (mutex.availablePermits() == 0) {
+                        mutex.release();
+                    }
+                    Thread.currentThread().interrupt();
+                    break;
                 }
-                mutex.release();
-                Thread.sleep(waitTime / 1000); // Convert microseconds to milliseconds
+
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
@@ -86,14 +223,14 @@ public class Train extends Thread {
             try {
                 Thread.sleep((waitTime * speed) / 1000);
 
-                mutex.acquire();
-                counter++;
-
-                if (counter % speed == 0) {
+                try {
+                    mutex.acquire();
                     moveTrainStep(currentTrack);
+                } finally {
+                    if (mutex.availablePermits() == 0) {
+                        mutex.release();
+                    }
                 }
-
-                mutex.release();
 
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -103,38 +240,38 @@ public class Train extends Thread {
     }
 
     private void moveTrainStep(Track currentTrack) throws InterruptedException {
-        // Check if we're currently at a stop
+        // Verificar se estamos atualmente numa paragem
         if (isAtStop(currentTrack)) {
-            // We're at a stop, try to leave
-            state = 'W'; // Waiting to leave stop
+            // Estamos numa paragem, tentar sair
+            state = 'W'; // À espera para sair da paragem
 
             int nextSemIdx = currentTrack.getStop(nextStop).getSemaphoreIndex();
 
-            // Release mutex before trying to acquire section semaphore
+            // Libertar mutex antes de tentar adquirir semáforo da seção
             mutex.release();
 
-            // Try to acquire next section (this will block if section is occupied)
+            // Tentar adquirir próxima seção (bloqueia se estiver ocupada)
             semaphores[nextSemIdx].acquire();
 
-            // Re-acquire mutex to update state
+            // Re-adquirir mutex para atualizar estado
             mutex.acquire();
 
-            // Successfully acquired next section, move out of stop
+            // Conseguiu adquirir próxima seção, sair da paragem
             state = 'M';
             position++;
             if (position >= currentTrack.getSize()) {
                 position = 0;
             }
 
-            // Release stop capacity semaphore
+            // Libertar capacidade da paragem
             currentTrack.getStop(section).getCapacitySemaphore().release();
 
-            // Update section tracking
+            // Atualizar tracking da seção
             section = nextStop;
             nextStop = (nextStop + 1) % currentTrack.getNumStops();
 
         } else {
-            // Check if next position is a stop
+            // Verificar se a próxima posição é uma paragem
             int nextPos = (position + 1) % currentTrack.getSize();
             boolean nextIsStop = false;
             int stopIndex = -1;
@@ -148,35 +285,35 @@ public class Train extends Thread {
             }
 
             if (nextIsStop) {
-                // Next position is a stop, try to enter
-                state = 'W'; // Waiting to enter stop
+                // Próxima posição é uma paragem, tentar entrar
+                state = 'W'; // À espera para entrar na paragem
 
                 Stop stop = currentTrack.getStop(stopIndex);
 
-                // Release mutex before trying to acquire stop capacity
+                // Libertar mutex antes de tentar adquirir capacidade da paragem
                 mutex.release();
 
-                // Try to acquire stop capacity (this will block if stop is full)
+                // Tentar adquirir capacidade da paragem (bloqueia se estiver cheia)
                 stop.getCapacitySemaphore().acquire();
 
-                // Re-acquire mutex to update state
+                // Re-adquirir mutex para atualizar estado
                 mutex.acquire();
 
-                // Successfully acquired stop capacity, move to stop
+                // Conseguiu adquirir capacidade da paragem, mover para a paragem
                 state = 'S';
                 position = nextPos;
 
-                // Release previous section semaphore
+                // Libertar semáforo da seção anterior
                 if (section >= 0 && section < currentTrack.getNumStops()) {
                     int prevSemIdx = currentTrack.getStop(section).getSemaphoreIndex();
                     semaphores[prevSemIdx].release();
                 }
 
-                // Update section tracking
+                // Atualizar tracking da seção
                 section = stopIndex;
 
             } else {
-                // Normal movement within section
+                // Movimento normal dentro da seção
                 state = 'M';
                 position++;
                 if (position >= currentTrack.getSize()) {
@@ -201,7 +338,7 @@ public class Train extends Thread {
         int lastStopIdx = -1;
         int nextStopIdx = -1;
 
-        // Find current or last passed stop
+        // Encontrar paragem atual ou última passada
         for (int s = 0; s < currentTrack.getNumStops(); s++) {
             if (currentTrack.getStop(s).getStopIndex() <= pos) {
                 if (lastStopIdx == -1 ||
@@ -215,7 +352,7 @@ public class Train extends Thread {
             lastStopIdx = currentTrack.getNumStops() - 1;
         }
 
-        // Find next stop
+        // Encontrar próxima paragem
         for (int s = 0; s < currentTrack.getNumStops(); s++) {
             if (currentTrack.getStop(s).getStopIndex() > pos) {
                 if (nextStopIdx == -1 ||
@@ -233,7 +370,7 @@ public class Train extends Thread {
         nextStop = nextStopIdx;
         section = lastStopIdx;
 
-        // Check if currently at a stop
+        // Verificar se está atualmente numa paragem
         boolean atStop = false;
         for (int s = 0; s < currentTrack.getNumStops(); s++) {
             if (currentTrack.getStop(s).getStopIndex() == pos) {
@@ -244,7 +381,7 @@ public class Train extends Thread {
             }
         }
 
-        // If not at a stop, acquire semaphore for current section
+        // Se não estiver numa paragem, adquirir semáforo da seção atual
         if (!atStop && section >= 0 && section < currentTrack.getNumStops()) {
             try {
                 int semIdx = currentTrack.getStop(section).getSemaphoreIndex();
@@ -255,7 +392,45 @@ public class Train extends Thread {
         }
     }
 
-    // Getters and setters
+    private void initializeSimpleMode() {
+        Track currentTrack = tracks[track];
+
+        // Encontrar em que seção o comboio está
+        int currentSection = 0;
+        for (int s = 0; s < currentTrack.getNumStops(); s++) {
+            Stop stop = currentTrack.getStop(s);
+            if (stop != null && stop.getStopIndex() <= position) {
+                currentSection = s;
+            }
+        }
+
+        this.section = currentSection;
+
+        // Verificar se está numa paragem
+        boolean atStop = false;
+        for (int s = 0; s < currentTrack.getNumStops(); s++) {
+            Stop stop = currentTrack.getStop(s);
+            if (stop != null && stop.getStopIndex() == position) {
+                state = 'S';
+                atStop = true;
+                break;
+            }
+        }
+
+        // Se não está numa paragem, adquirir semáforo da seção atual
+        if (!atStop && currentSection < currentTrack.getNumStops()) {
+            try {
+                Stop currentStop = currentTrack.getStop(currentSection);
+                if (currentStop != null) {
+                    semaphores[currentStop.getSemaphoreIndex()].acquire();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    // Getters e setters synchronized
     public synchronized int getNum() { return num; }
     public synchronized void setNum(int num) { this.num = num; }
 
