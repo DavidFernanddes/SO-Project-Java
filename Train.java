@@ -1,10 +1,6 @@
 import java.util.concurrent.Semaphore;
-import java.util.logging.Logger;
-import java.util.logging.Level;
 
 public class Train extends Thread {
-    private static final Logger logger = Logger.getLogger(Train.class.getName());
-
     private static final char STATE_MOVING = 'M';
     private static final char STATE_WAITING = 'W';
     private static final char STATE_AT_STOP = 'S';
@@ -68,8 +64,6 @@ public class Train extends Thread {
 
     @Override
     public void run() {
-        logger.info("Train " + num + " started");
-
         try {
             if (fileType == 2) {
                 runProducerConsumerMode();
@@ -77,10 +71,7 @@ public class Train extends Thread {
                 runBasicMode();
             }
         } catch (InterruptedException e) {
-            logger.info("Train " + num + " interrupted");
             Thread.currentThread().interrupt();
-        } catch (Exception e) {
-            logger.log(Level.SEVERE, "Error in train " + num, e);
         } finally {
             cleanup();
         }
@@ -344,10 +335,8 @@ public class Train extends Thread {
                 }
             }
         } catch (Exception e) {
-            logger.log(Level.WARNING, "Error during cleanup for train " + num, e);
+            // Cleanup error - silently ignore
         }
-
-        logger.info("Train " + num + " stopped");
     }
 
     public synchronized int getNum() { return num; }
@@ -366,10 +355,4 @@ public class Train extends Thread {
     public synchronized void setSection(int section) { this.section = section; }
     public synchronized void setHasRequest(boolean hasRequest) { this.hasRequest = hasRequest; }
     public synchronized void setHasProduct(boolean hasProduct) { this.hasProduct = hasProduct; }
-
-    @Override
-    public String toString() {
-        return String.format("Train %d: pos=%d, section=%d, state=%c, hasRequest=%b, hasProduct=%b",
-                num, position, section, state, hasRequest, hasProduct);
-    }
 }

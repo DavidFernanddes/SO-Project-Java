@@ -1,10 +1,6 @@
 import java.util.concurrent.Semaphore;
-import java.util.logging.Logger;
-import java.util.logging.Level;
 
 public class Consumer extends Thread {
-    private static final Logger logger = Logger.getLogger(Consumer.class.getName());
-
     private final int stopIndex;
     private final int capacity;
     private final int requestTime;
@@ -19,7 +15,7 @@ public class Consumer extends Thread {
     public Consumer(int stopIndex, int capacity, int requestTime) {
         this.stopIndex = stopIndex;
         this.capacity = Math.max(1, capacity);
-        this.requestTime = Math.max(100, requestTime); // Mínimo 100ms
+        this.requestTime = Math.max(100, requestTime);
         this.currentRequests = 0;
 
         this.empty = new Semaphore(this.capacity);
@@ -33,8 +29,6 @@ public class Consumer extends Thread {
 
     @Override
     public void run() {
-        logger.info("Consumer started at stop " + stopIndex);
-
         while (running && !Thread.currentThread().isInterrupted()) {
             try {
                 Thread.sleep(requestTime);
@@ -44,28 +38,18 @@ public class Consumer extends Thread {
 
                 try {
                     currentRequests++;
-                    logger.fine("Consumer: Pedido criado. Total: " + currentRequests + "/" + capacity);
                 } finally {
                     mutex.release();
                     full.release();
                 }
 
             } catch (InterruptedException e) {
-                logger.info("Consumer interrupted");
                 Thread.currentThread().interrupt();
-                break;
-            } catch (Exception e) {
-                logger.log(Level.SEVERE, "Error in consumer", e);
                 break;
             }
         }
-
-        logger.info("Consumer stopped");
     }
 
-    /**
-     * Método para comboios obterem pedidos
-     */
     public void takeRequest() throws InterruptedException {
         full.acquire();
         mutex.acquire();
@@ -73,7 +57,6 @@ public class Consumer extends Thread {
         try {
             if (currentRequests > 0) {
                 currentRequests--;
-                logger.fine("Consumer: Pedido retirado. Total: " + currentRequests + "/" + capacity);
             }
         } finally {
             mutex.release();
@@ -81,21 +64,15 @@ public class Consumer extends Thread {
         }
     }
 
-    /**
-     * Método para comboios entregarem produtos (consumir pedido e produto)
-     */
     public void deliverProduct() throws InterruptedException {
         mutex.acquire();
         try {
-            logger.fine("Consumer: Produto entregue!");
+            // Produto entregue
         } finally {
             mutex.release();
         }
     }
 
-    /**
-     * Verificar se há pedidos disponíveis (não bloqueante)
-     */
     public boolean hasRequests() {
         try {
             if (mutex.tryAcquire()) {
@@ -107,14 +84,10 @@ public class Consumer extends Thread {
             }
             return false;
         } catch (Exception e) {
-            logger.log(Level.WARNING, "Error checking requests", e);
             return false;
         }
     }
 
-    /**
-     * Para o consumo de forma segura
-     */
     public void stopConsumer() {
         running = false;
         this.interrupt();
@@ -134,11 +107,5 @@ public class Consumer extends Thread {
 
     public int getRequestTime() {
         return requestTime;
-    }
-
-    @Override
-    public String toString() {
-        return String.format("Consumer[stop=%d, requests=%d/%d, time=%dms]",
-                stopIndex, getCurrentRequests(), capacity, requestTime);
     }
 }

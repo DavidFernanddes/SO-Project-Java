@@ -49,11 +49,4 @@ public class Stop {
     public Semaphore getCapacitySemaphore() {
         return capacitySemaphore;
     }
-
-    @Override
-    public String toString() {
-        return String.format("Stop[index=%d, sem=%d, cap=%d, available=%d]",
-                stopIndex, semaphoreIndex, capacity,
-                capacitySemaphore.availablePermits());
-    }
 }
